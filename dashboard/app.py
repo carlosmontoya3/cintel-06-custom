@@ -1,178 +1,121 @@
-# Import libraries
-from shiny import reactive, render
-from shiny.express import ui
-import random
-from datetime import datetime
-from collections import deque
-import pandas as pd
+import faicons as fa
 import plotly.express as px
-from ipyleaflet import Map
-from shinywidgets import render_plotly, render_widget
-from shinyswatch import theme
-from faicons import icon_svg
+from shinywidgets import render_plotly
+from shiny import reactive, render, req
+from shiny.express import input, ui
 
-# Set a constant UPDATE INTERVAL for all live data
-UPDATE_INTERVAL_SECS: int = 5
+# Load data and compute static values
+tips = px.data.tips()
+bill_rng = (min(tips.total_bill), max(tips.total_bill))
 
-# Initialize reactive value, wrapper around deque
-DEQUE_SIZE: int = 4
-reactive_value_wrapper = reactive.value(deque(maxlen=DEQUE_SIZE))
+# Add page title and sidebar
+ui.page_opts(title="Montoya's Restaurant Tips", fillable=True)
+with ui.sidebar(open="desktop", style="background-color: silver", class_="text-white"):  # Changed background color to silver and added text color as white
+    ui.input_slider("total_bill", "Bill Range", min=bill_rng[0], max=bill_rng[1], value=bill_rng, pre="$")
+    ui.input_checkbox_group("time", "Meal Type", ["Breakfast", "Lunch"], selected=["Breakfast", "Lunch"], inline=True)
+    ui.input_action_link("reset", "Reset Filter")
 
-# Initialize reactive calculation
-@reactive.calc()
-def reactive_calc_combined():
+# Add main content
+with ui.layout_columns(fill=False):
+    with ui.value_box(showcase=fa.icon_svg("user", "solid",), theme="bg-red"):  # Adjusted background to red
+        "Total tippers"
+        @render.express
+        def total_tippers():
+            tips_data().shape[0]
 
-    # Invalidate this calculation every UPDATE_INTERVAL_SECS to trigger updates
-    reactive.invalidate_later(UPDATE_INTERVAL_SECS)
+    with ui.value_box(showcase=fa.icon_svg("dollar-sign", "solid"), theme="bg-red"):  # Adjusted background gradient color to red
+        "Average tip"
+        @render.express
+        def average_tip():
+            d = tips_data()
+            if d.shape[0] > 0:
+                perc = d.tip / d.total_bill
+                f"{perc.mean():.1%}"
 
-    # Data generation logic. Get random temperature between 32 and 40 C, rounded to 1 decimal place (Dallas, TX)
-    temp = round(random.uniform(32, 40), 1)
+    with ui.value_box(showcase=fa.icon_svg("wallet"), theme="bg-red"):  # Adjusted background gradient color to red
+        "Average Tab"
+        @render.express
+        def average_bill():
+            d = tips_data()
+            if d.shape[0] > 0:
+                bill = d.total_bill.mean()
+                f"${bill:.2f}"
 
-    # Get a timestamp for "now"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    new_dictionary_entry = {"temp": temp, "timestamp": timestamp}
-
-    # Get the deque and append the new entry
-    reactive_value_wrapper.get().append(new_dictionary_entry)
-
-    # Get a snapshot of the current deque for any further processing
-    deque_snapshot = reactive_value_wrapper.get()
-
-    # For Display: Convert deque to DataFrame for display
-    df = pd.DataFrame(deque_snapshot)
-
-    # For Display: Get the latest dictionary entry
-    latest_dictionary_entry = new_dictionary_entry
-
-    # Return a tuple everything we need
-    return deque_snapshot, df, latest_dictionary_entry
-
-# Define the Shiny UI Page layout, set the title
-ui.page_opts(title="Montoya's Dallas, TX Dashboard", fillable=True)
-theme.slate()
-
-# Define the UI Layout Sidebar with background color
-with ui.sidebar(open="open", style="background-color: silver; color:white"):
-    
-    # Header with two lines
-    with ui.h2(class_="text-center"):
-        ui.div("Dallas, TX Weather"),
-
-    # Add an icon with custom size using CSS
-    ui.div(
-    icon_svg("star"),
-    class_="text-center", 
-    style="color: navy; font-size: 50px",
-    )
-    
-    # Description
-    ui.p(
-        "Real-time temperature readings in Dallas, TX",
-        class_="text-center",
-    )
-    ui.hr() # Horizontal line for visual separation
-    
-    # Links section
-    ui.h6("Links:")
-    ui.a(
-        "Carlos' GitHub Source",
-        href="https://github.com/carlosmontoya3/cintel-05-cintel",
-        target="_blank",
-        style="color: #007bff;",  # Blue color for links
-    )
-    ui.a(
-        "PyShiny", 
-        href="https://shiny.posit.co/py/", 
-        target="_blank",
-        style="color: #007bff;",  # Blue color for links
-    )
-    ui.a(
-        "PyShiny Express",
-        href="https://shiny.posit.co/blog/posts/shiny-express/",
-        target="_blank",
-        style="color: #007bff;",  # Blue color for links
-    )
-
-# Display current temperature in the main panel
-with ui.layout_column_wrap(fill=False):
-    # Display icon and title in the main panel
-    with ui.value_box(
-        showcase=icon_svg("sun"),
-        style="background-color: silver; color: navy;",  # Add CSS style here
-    ):
-        "Current Temperature"
-
-        @render.text
-        def display_temp():
-            """Get the latest reading and return a temperature string"""
-            deque_snapshot, df, latest_dictionary_entry = reactive_calc_combined()
-            return f"{latest_dictionary_entry['temp']} C"
-
-    # Display current day and time card
-    with ui.card(full_screen=True):
-    # Customize card header with background color, text, and icon
-        ui.card_header(
-        "Current Date & Time",
-        style="background-color: navy; color: white;",
-    )
-
-        # Customize card content text color and font size
-        @render.text
-        def display_time():
-            """Get the latest reading and return a timestamp string"""
-            deque_snapshot, df, latest_dictionary_entry = reactive_calc_combined()
-            return f"{latest_dictionary_entry['timestamp']}"
-
-        # Add icon
-        icon_svg("clock")
-
-with ui.layout_column_wrap(fill=False):
-    
-    # Display the DataFrame
-    with ui.card(style="width: 100%; height: 200px;"):
-        ui.card_header("Data Table", style="background-color: navy; color: white;")
-
+with ui.layout_columns(col_widths=[6, 6, 12]):
+    with ui.card(full_screen=True, style="background-color: silver"):  # Changed background to silver
+        ui.card_header("Tips Grid")
         @render.data_frame
-        def display_df():
-            """Get the latest reading and return a dataframe with current readings"""
-            deque_snapshot, df, latest_dictionary_entry = reactive_calc_combined()
-            pd.set_option('display.width', None)        # Use maximum width
-            return render.DataGrid( df,width="100%")
+        def table():
+            return render.DataGrid(tips_data())
 
-    #Display the Dallas map card
-    with ui.card(style="width: 100%; height: 200px;"):
-        ui.card_header("Map of Dallas", style="background-color: navy; color: white;")
-        @render_widget  
-        def map():
-            return Map(center=(32.7767, -96.7970), zoom=10)  
-    
-
-# Display the chart with current trend
-with ui.layout_columns(col_widths=[12, 6]):
-    with ui.card(full_screen=True):
-        ui.card_header("Chart with Current Trend", style="background-color: navy; color: white;")
-
-        # Initialize an empty figure
-        fig = px.line(title="Temperature Trend Over Time", labels={"temp": "Temperature (°C)", "timestamp": "Time"})
+    with ui.card(full_screen=True, style="background-color: silver"):  # Changed background color to silver
+        with ui.card_header(class_="d-flex justify-content-between align-items-center", style="color: black"):  # Added white text color
+            "Total Tab vs Tip Amount"
+            with ui.popover(title="Add a color variable", placement="top"):
+                fa.icon_svg("wallet")
+                ui.input_radio_buttons(
+                    "scatter_color", None,
+                    ["none", "sex", "day", "time"],
+                    inline=True
+                )
 
         @render_plotly
-        def display_plot():
-            # Fetch data from the reactive calc function
-            deque_snapshot, df, latest_dictionary_entry = reactive_calc_combined()
+        def scatterplot():
+            color = input.scatter_color()
+            return px.scatter(
+                tips_data(),
+                x="total_bill",
+                y="tip",
+                color=None if color == "none" else color,
+                trendline="lowess"
+            )
 
-            # Ensure the DataFrame is not empty before updating the plot
-            if not df.empty:
-                # Convert the 'timestamp' column to datetime for better plotting
-                df["timestamp"] = pd.to_datetime(df["timestamp"])
+    with ui.card(full_screen=True, style="background-color: silver"):  # Changed background color to silver
+        with ui.card_header(class_="d-flex justify-content-between align-items-center", style="color: black"):  # Added white text color
+            "Tip percentages"
+            with ui.popover(title="Add a color variable"):
+                fa.icon_svg("wallet")
+                ui.input_radio_buttons(
+                    "tip_perc_y", "Split by:",
+                    ["sex", "day", "time"],
+                    selected="day",
+                    inline=True
+                )
 
-                # Add trace for temperature data
-                fig.add_scatter(x=df["timestamp"], y=df["temp"], mode="lines", name="Temperature")
+        @render_plotly
+        def tip_perc():
+            from ridgeplot import ridgeplot
+            dat = tips_data().copy()
+            dat["percent"] = dat.tip / dat.total_bill
+            yvar = input.tip_perc_y()
+            uvals = dat[yvar].unique()
 
-                # Configure animation settings
-                fig.update_layout(updatemenus=[dict(type="buttons", showactive=False, buttons=[dict(label="Play", method="animate", args=[None, {"fromcurrent": True}]),])])
+            samples = [
+                [dat.percent[dat[yvar] == val]]
+                for val in uvals
+            ]
 
-                # Update layout as needed to customize further
-                fig.update_layout(xaxis_title="Time", yaxis_title="Temperature (°C)")
+            plt = ridgeplot(
+                samples=samples, labels=uvals, bandwidth=0.01,
+                colorscale="viridis", colormode="row-index"
+            )
 
-            return fig
+            plt.update_layout(
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
+            )
+
+            return plt
+
+# Reactive calculations and effects
+@reactive.calc
+def tips_data():
+    bill = input.total_bill()
+    idx1 = tips.total_bill.between(bill[0], bill[1])
+    idx2 = tips.time.isin(input.time())
+    return tips[idx1 & idx2]
+
+@reactive.effect
+@reactive.event(input.reset)
+def _():
+    ui.update_slider("total_bill", value=bill_rng)
+    ui.update_checkbox_group("time", selected=["Breakfast", "Lunch"])
