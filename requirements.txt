@@ -1,2 +1,5 @@
+ridgeplot
+faicons
 pandas
 plotly
+shinywidgets
